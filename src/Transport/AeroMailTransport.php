@@ -1,10 +1,9 @@
 <?php
-
-namespace DikeshRajGiri\AeroMailer\Transport;
+namespace DikeshRaj\AeroMailer\Transport;
 
 use GuzzleHttp\ClientInterface;
-use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mailer\Transport\AbstractTransport;
+use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mime\Email;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Psr\Log\LoggerInterface;
@@ -25,38 +24,32 @@ class AeroMailTransport extends AbstractTransport
         $this->logger = $logger;
     }
 
-    protected function doSend(SentMessage $message): void
+    protected function doSend(SentMessage $sentMessage): void
     {
-        $original = $message->getOriginalMessage();
+        $original = $sentMessage->getOriginalMessage();
 
-        // If it's Symfony Email, extract details
+        // extract fields (supports Symfony Email and old-style Mailable)
         if ($original instanceof Email) {
-            $to = collect($original->getTo() ?? [])->map(fn($a) => [
-                'email' => $a->getAddress(),
-                'name' => $a->getName() ?: null
-            ])->values()->all();
-
+            $to = collect($original->getTo() ?? [])->map(fn($a) => ['email'=>$a->getAddress(),'name'=>$a->getName()])->values()->all();
             $cc = collect($original->getCc() ?? [])->map(fn($a) => $a->getAddress())->values()->all();
             $bcc = collect($original->getBcc() ?? [])->map(fn($a) => $a->getAddress())->values()->all();
             $replyTo = optional($original->getReplyTo()[0] ?? null)->getAddress();
-
             $fromPart = $original->getFrom()[0] ?? null;
-            $from = $fromPart?->getAddress() ?? null;
-            $fromName = $fromPart?->getName() ?? null;
-
+            $from = $fromPart?->getAddress();
+            $fromName = $fromPart?->getName();
             $subject = $original->getSubject();
             $html = $original->getHtmlBody();
             $text = $original->getTextBody();
             $attachments = $this->extractAttachments($original->getAttachments());
         } else {
-            // Fallback for custom Mailable properties
+            // fallback - try reading public properties
             $to = $original->to ?? [];
             $cc = $original->cc ?? [];
             $bcc = $original->bcc ?? [];
             $replyTo = $original->reply_to ?? null;
             $from = $original->from ?? null;
             $fromName = $original->from_name ?? null;
-            $subject = $original->subjectText ?? ($original->subject ?? null);
+            $subject = $original->subjectText ?? $original->subject ?? null;
             $html = $original->content ?? null;
             $text = null;
             $attachments = $original->attachments ?? [];
@@ -75,13 +68,8 @@ class AeroMailTransport extends AbstractTransport
             'attachments' => $attachments,
         ];
 
-        $headers = [
-            'Accept' => 'application/json',
-            'Content-Type' => 'application/json',
-        ];
-        if ($this->apiKey) {
-            $headers['X-Api-Key'] = $this->apiKey;
-        }
+        $headers = ['Accept'=>'application/json','Content-Type'=>'application/json'];
+        if ($this->apiKey) $headers['X-Api-Key'] = $this->apiKey;
 
         try {
             $response = $this->client->request('POST', "{$this->endpoint}/api/v1/email/send", [
@@ -91,17 +79,16 @@ class AeroMailTransport extends AbstractTransport
             ]);
 
             $status = $response->getStatusCode();
-
             if ($status === 202 || ($status >= 200 && $status < 300)) {
-                return; // accepted
+                return;
             }
 
             $body = (string)$response->getBody();
-            $this->log('error', 'AeroMailer API error', ['status' => $status, 'body' => $body]);
-            throw new TransportException("AeroMailer API responded with status {$status}: {$body}", $message);
+            $this->log('error', 'AeroMailer API error', ['status'=>$status,'body'=>$body]);
+            throw new TransportException("AeroMailer API responded {$status}: {$body}");
         } catch (\Throwable $e) {
-            $this->log('error', 'AeroMailer Transport exception: ' . $e->getMessage(), []);
-            throw new TransportException('AeroMailer transport failed: ' . $e->getMessage(), $message, 0, $e);
+            $this->log('error', 'AeroMailer transport exception: '.$e->getMessage(), []);
+            throw new TransportException('AeroMailer transport failed: '.$e->getMessage(), $sentMessage, 0, $e);
         }
     }
 
@@ -109,15 +96,11 @@ class AeroMailTransport extends AbstractTransport
     {
         $list = [];
         foreach ($parts as $part) {
-            try {
-                $body = (string) $part->getBody();
-            } catch (\Throwable $e) {
-                $body = '';
-            }
+            try { $body = (string)$part->getBody(); } catch (\Throwable $e) { $body = ''; }
             $list[] = [
                 'filename' => $part->getFilename() ?? 'attachment',
                 'content' => base64_encode($body),
-                'type' => ($part->getMediaType() ?? 'application') . '/' . ($part->getMediaSubtype() ?? 'octet-stream'),
+                'type' => ($part->getMediaType() ?? 'application').'/'.($part->getMediaSubtype() ?? 'octet-stream'),
             ];
         }
         return $list;
@@ -125,13 +108,8 @@ class AeroMailTransport extends AbstractTransport
 
     protected function log(string $level, string $message, array $context = []): void
     {
-        if ($this->logger) {
-            $this->logger->{$level}($message, $context);
-        }
+        if ($this->logger) $this->logger->{$level}($message, $context);
     }
 
-    public function __toString(): string
-    {
-        return 'aeromailer';
-    }
+    public function __toString(): string { return 'aeromailer'; }
 }

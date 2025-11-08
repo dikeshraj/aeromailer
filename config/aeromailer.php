@@ -1,10 +1,8 @@
 <?php
 return [
-    'endpoint' => env('AEROMAIL_ENDPOINT', 'https://api.yourdomain.com'),
-
+    'endpoint' => env('AEROMAIL_ENDPOINT', 'https://api.your-backend.com'),
     'api_key' => env('AEROMAIL_CLIENT_KEY'),
-
     'http' => [
-        'timeout' => 30,
+        'timeout' => env('AEROMAIL_HTTP_TIMEOUT', 15),
     ],
 ];
