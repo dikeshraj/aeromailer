@@ -1,25 +1,30 @@
 {
-  "name": "dikeshraj/aeromailer",
-  "description": "AeroMailer custom Laravel mail driver (client package)",
-  "type": "library",
-  "license": "MIT",
-  "require": {
-    "php": ">=8.1",
-    "illuminate/support": "^12.0",
-    "illuminate/mail": "^10.0|^11.0|^12.0",
-    "guzzlehttp/guzzle": "^7.0"
-  },
-  "autoload": {
-    "psr-4": {
-      "DikeshRajGiri\\AeroMailer\\": "src/"
-    }
-  },
-  "extra": {
-    "laravel": {
-      "providers": [
-        "DikeshRajGiri\\AeroMailer\\AeroMailerServiceProvider"
-      ]
-    }
-  },
-  "minimum-stability": "stable"
+    "name": "dikeshraj/aeromailer",
+    "description": "AeroMailer - Secure email delivery with validation and spam detection via backend API.",
+    "type": "library",
+    "license": "proprietary",
+    "authors": [
+        {
+            "name": "Dikesh Raj Giri",
+            "email": "giridikesh03@gmail.com"
+        }
+    ],
+    "autoload": {
+        "psr-4": {
+            "DikeshRajGiri\\AeroMailer\\": "src/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "DikeshRajGiri\\AeroMailer\\Providers\\AeroMailServiceProvider"
+            ]
+        }
+    },
+    "require": {
+        "php": "^8.2",
+        "guzzlehttp/guzzle": "^7.8"
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
 }
