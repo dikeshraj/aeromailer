@@ -1,16 +1,18 @@
 {
   "name": "dikeshraj/aeromailer",
-  "description": "AeroMailer custom Laravel mail driver",
+  "description": "AeroMailer custom Laravel mail driver (client package)",
   "type": "library",
+  "license": "MIT",
+  "require": {
+    "php": ">=8.1",
+    "illuminate/support": "^12.0",
+    "illuminate/mail": "^10.0|^11.0|^12.0",
+    "guzzlehttp/guzzle": "^7.0"
+  },
   "autoload": {
     "psr-4": {
-      "YourCompany\\AeroMailer\\": "src/"
+      "DikeshRajGiri\\AeroMailer\\": "src/"
     }
-  },
-  "require": {
-    "php": "^8.1",
-    "illuminate/mail": "^10.0",
-    "guzzlehttp/guzzle": "^7.0"
   },
   "extra": {
     "laravel": {

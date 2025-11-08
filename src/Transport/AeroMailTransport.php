@@ -7,49 +7,59 @@ use Symfony\Component\Mailer\SentMessage;
 use Symfony\Component\Mailer\Transport\AbstractTransport;
 use Symfony\Component\Mime\Email;
 use Symfony\Component\Mailer\Exception\TransportException;
-use Illuminate\Support\Facades\Log;
+use Psr\Log\LoggerInterface;
 
 class AeroMailTransport extends AbstractTransport
 {
     protected ClientInterface $client;
     protected string $endpoint;
-    protected string $apiKey;
+    protected ?string $apiKey;
+    protected ?LoggerInterface $logger;
 
-    public function __construct(ClientInterface $client, string $endpoint, string $apiKey)
+    public function __construct(ClientInterface $client, string $endpoint, ?string $apiKey = null, ?LoggerInterface $logger = null)
     {
         parent::__construct();
         $this->client = $client;
         $this->endpoint = rtrim($endpoint, '/');
         $this->apiKey = $apiKey;
+        $this->logger = $logger;
     }
 
     protected function doSend(SentMessage $message): void
     {
-        $email = $message->getOriginalMessage();
+        $original = $message->getOriginalMessage();
 
-        if ($email instanceof Email) {
-            $to = collect($email->getTo())->pluck('address')->all();
-            $cc = collect($email->getCc() ?? [])->pluck('address')->all();
-            $bcc = collect($email->getBcc() ?? [])->pluck('address')->all();
-            $replyTo = optional($email->getReplyTo()[0] ?? null)->getAddress();
-            $fromAddress = $email->getFrom()[0] ?? null;
-            $from = $fromAddress?->getAddress();
-            $fromName = $fromAddress?->getName();
-            $subject = $email->getSubject();
-            $html = $email->getHtmlBody();
-            $text = $email->getTextBody();
-            $attachments = $this->extractAttachments($email->getAttachments());
+        // If it's Symfony Email, extract details
+        if ($original instanceof Email) {
+            $to = collect($original->getTo() ?? [])->map(fn($a) => [
+                'email' => $a->getAddress(),
+                'name' => $a->getName() ?: null
+            ])->values()->all();
+
+            $cc = collect($original->getCc() ?? [])->map(fn($a) => $a->getAddress())->values()->all();
+            $bcc = collect($original->getBcc() ?? [])->map(fn($a) => $a->getAddress())->values()->all();
+            $replyTo = optional($original->getReplyTo()[0] ?? null)->getAddress();
+
+            $fromPart = $original->getFrom()[0] ?? null;
+            $from = $fromPart?->getAddress() ?? null;
+            $fromName = $fromPart?->getName() ?? null;
+
+            $subject = $original->getSubject();
+            $html = $original->getHtmlBody();
+            $text = $original->getTextBody();
+            $attachments = $this->extractAttachments($original->getAttachments());
         } else {
-            $to = $email->to ?? [];
-            $cc = $email->cc ?? [];
-            $bcc = $email->bcc ?? [];
-            $replyTo = $email->reply_to ?? null;
-            $from = $email->from ?? null;
-            $fromName = $email->from_name ?? null;
-            $subject = $email->subjectText ?? '';
-            $html = $email->content ?? '';
+            // Fallback for custom Mailable properties
+            $to = $original->to ?? [];
+            $cc = $original->cc ?? [];
+            $bcc = $original->bcc ?? [];
+            $replyTo = $original->reply_to ?? null;
+            $from = $original->from ?? null;
+            $fromName = $original->from_name ?? null;
+            $subject = $original->subjectText ?? ($original->subject ?? null);
+            $html = $original->content ?? null;
             $text = null;
-            $attachments = $email->attachments ?? [];
+            $attachments = $original->attachments ?? [];
         }
 
         $payload = [
@@ -65,38 +75,59 @@ class AeroMailTransport extends AbstractTransport
             'attachments' => $attachments,
         ];
 
+        $headers = [
+            'Accept' => 'application/json',
+            'Content-Type' => 'application/json',
+        ];
+        if ($this->apiKey) {
+            $headers['X-Api-Key'] = $this->apiKey;
+        }
+
         try {
             $response = $this->client->request('POST', "{$this->endpoint}/api/v1/email/send", [
-                'headers' => [
-                    'X-Api-Key' => $this->apiKey,
-                    'Accept' => 'application/json',
-                    'Content-Type' => 'application/json',
-                ],
+                'headers' => $headers,
                 'json' => $payload,
-                'timeout' => 15,
+                'http_errors' => false,
             ]);
 
             $status = $response->getStatusCode();
-            if ($status !== 202 && $status >= 400) {
-                throw new TransportException("AeroMailer API responded {$status}: " . $response->getBody());
+
+            if ($status === 202 || ($status >= 200 && $status < 300)) {
+                return; // accepted
             }
+
+            $body = (string)$response->getBody();
+            $this->log('error', 'AeroMailer API error', ['status' => $status, 'body' => $body]);
+            throw new TransportException("AeroMailer API responded with status {$status}: {$body}", $message);
         } catch (\Throwable $e) {
-            Log::error('AeroMailer Transport Error', ['error' => $e->getMessage()]);
-            throw new TransportException('AeroMailer send failed: ' . $e->getMessage(), 0, $e);
+            $this->log('error', 'AeroMailer Transport exception: ' . $e->getMessage(), []);
+            throw new TransportException('AeroMailer transport failed: ' . $e->getMessage(), $message, 0, $e);
         }
     }
 
-    protected function extractAttachments($attachments): array
+    protected function extractAttachments($parts): array
     {
-        $result = [];
-        foreach ($attachments as $attachment) {
-            $result[] = [
-                'filename' => $attachment->getName(),
-                'content' => base64_encode($attachment->getBody()),
-                'type' => $attachment->getMediaType() . '/' . $attachment->getMediaSubtype(),
+        $list = [];
+        foreach ($parts as $part) {
+            try {
+                $body = (string) $part->getBody();
+            } catch (\Throwable $e) {
+                $body = '';
+            }
+            $list[] = [
+                'filename' => $part->getFilename() ?? 'attachment',
+                'content' => base64_encode($body),
+                'type' => ($part->getMediaType() ?? 'application') . '/' . ($part->getMediaSubtype() ?? 'octet-stream'),
             ];
         }
-        return $result;
+        return $list;
+    }
+
+    protected function log(string $level, string $message, array $context = []): void
+    {
+        if ($this->logger) {
+            $this->logger->{$level}($message, $context);
+        }
     }
 
     public function __toString(): string
