@@ -9,34 +9,23 @@ use GuzzleHttp\Client;
 
 class AeroMailerServiceProvider extends ServiceProvider
 {
-    public function register()
-    {
-        $this->mergeConfigFrom(__DIR__ . '/../config/aeromailer.php', 'aeromailer');
-    }
-
     public function boot()
     {
-        // publish config
         $this->publishes([
-            __DIR__ . '/../config/aeromailer.php' => config_path('aeromailer.php'),
+            __DIR__.'/../config/aeromailer.php' => config_path('aeromailer.php'),
         ], 'aeromailer-config');
 
-        // extend the mail manager with 'aeromailer' transport
-        $this->app->make(MailManager::class)->extend('aeromailer', function ($config) {
-            $cfg = array_merge(config('aeromailer', []), $config ?? []);
-            $apiKey = $cfg['api_key'] ?? env('AEROMAIL_API_KEY');
-            $endpoint = rtrim($cfg['endpoint'] ?? '', '/');
-            $guzzleOptions = $cfg['guzzle'] ?? [];
-            $client = new Client($guzzleOptions);
-
+        $this->app->make(MailManager::class)->extend('aeromailer', function ($app) {
             return new AeroMailTransport(
-                $apiKey,
-                $endpoint,
-                $client,
-                $this->app['events'],
-                $this->app['log'],
-                $cfg
+                new Client(),
+                config('aeromailer.endpoint'),
+                config('aeromailer.api_key')
             );
         });
+    }
+
+    public function register()
+    {
+        $this->mergeConfigFrom(__DIR__.'/../config/aeromailer.php', 'aeromailer');
     }
 }
