@@ -143,5 +143,3 @@ For internal or client distribution only. All rights reserved.
 
 Dikesh Raj Giri
 📧 giridikesh03@gmail.com
-
-🌐 Remote Job Nepal
